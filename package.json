@@ -8,15 +8,18 @@
 		"release": "plugma release"
 	},
 	"dependencies": {
+		"pinia": "^3.0.3",
 		"vue": "^3.5.12"
 	},
 	"devDependencies": {
+		"@figma/plugin-typings": "^1.88.0",
 		"@vitejs/plugin-vue": "^5.1.4",
+		"plugma": "^1.2.10",
+		"sass": "^1.93.2",
+		"sass-loader": "^16.0.5",
 		"typescript": "~5.6.2",
 		"vite": "^5.4.10",
-		"vue-tsc": "^2.1.8",
-		"@figma/plugin-typings": "^1.88.0",
-		"plugma": "^1.2.10"
+		"vue-tsc": "^2.1.8"
 	},
 	"plugma": {
 		"manifest": {
@@ -28,6 +31,9 @@
 				"figma",
 				"figjam",
 				"dev"
+			],
+			"capabilities": [
+				"inspect"
 			],
 			"networkAccess": {
 				"allowedDomains": [

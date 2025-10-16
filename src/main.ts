@@ -1,153 +1,135 @@
-// Read the docs https://plugma.dev/docs
+// src/main.ts
+import {cleanVarName, convertToCss, formatVarName, getCollectionById, normalizeModeName} from "./utils/exporting.ts";
 
 export default function () {
-// src/main.ts
 	figma.showUI(__html__, { width: 400, height: 480 });
 
 	figma.ui.onmessage = async (msg) => {
 		if (msg.type === "export-css") {
-			try {
-				const allVars = figma.variables.getLocalVariables();
-				const collections = figma.variables.getLocalVariableCollections();
-
-				if (!allVars.length) {
-					figma.ui.postMessage({
-						type: "error",
-						message: "No variables found in this file."
-					});
-					return;
-				}
-
-				// Группируем по коллекциям
-				const grouped: Record<string, Variable[]> = {};
-				for (const variable of allVars) {
-					const colId = variable.variableCollectionId;
-					if (!grouped[colId]) grouped[colId] = [];
-					grouped[colId].push(variable);
-				}
-
-				const cssBlocks: string[] = [];
-
-				for (const collection of collections) {
-					const vars = grouped[collection.id];
-					if (!vars) continue;
-
-					const lines: string[] = [];
-					lines.push(`/* === ${collection.name} === */`);
-					lines.push(`:root {`);
-
-					for (const variable of vars) {
-						for (const modeId in variable.valuesByMode) {
-							const value = variable.valuesByMode[modeId];
-							const mode = collection.modes.find((m) => m.modeId === modeId);
-
-							// 🧠 Default — без суффикса
-							const modeSuffix =
-								mode && mode.name.toLowerCase() !== "default"
-									? "-" + normalizeModeName(mode.name)
-									: "";
-
-							// 🧩 Формируем имя переменной без []
-							const varName = cleanVarName(
-								`${formatVarName(variable.name)}${modeSuffix}`
-							);
-
-							let cssValue = "";
-
-							if (value?.type === "VARIABLE_ALIAS") {
-								const refVar = figma.variables.getVariableById(value.id);
-								if (refVar) {
-									// 🧹 чистим имя alias-переменной
-									const refName = cleanVarName(formatVarName(refVar.name));
-									cssValue = `var(--${refName})`;
-								} else {
-									cssValue = "/* invalid alias */";
-								}
-							} else {
-								cssValue = convertToCss(variable.resolvedType, value);
-							}
-
-							lines.push(`  --${varName}: ${cssValue};`);
-						}
-					}
-
-					lines.push(`}`);
-					cssBlocks.push(lines.join("\n"));
-				}
-
-				const css = cssBlocks.join("\n\n");
-				figma.ui.postMessage({ type: "css-result", css });
-			} catch (error: any) {
-				figma.ui.postMessage({
-					type: "error",
-					message: `Failed to export variables: ${error.message}`
-				});
+			let collection = undefined;
+			const typeConnection = msg.props?.typeCollection
+			if (msg.props?.typeCollection) {
+				const collections = await figma.variables.getLocalVariableCollectionsAsync()
+				collection = collections.find(elem => elem.name === typeConnection)
 			}
+			return getCssVariables(figma, collection?.id)
+		}
+
+		if (msg.type === "get-collection") {
+			const collections = await figma.variables.getLocalVariableCollectionsAsync()
+			const collectionsMapped = await Promise.all(collections.map(async (elem) => {
+				const data = await figma.variables.getVariableCollectionByIdAsync(elem.id)
+				return {
+					id: elem.id,
+					name: data?.name,
+				}
+			}))
+			figma.ui.postMessage({ type: "get-collection-result", collectionsMapped });
+		}
+
+		if (msg.type === 'copy') {
+			figma.notify('✅ CSS copied!');
+			figma.copyText(msg.text);
 		}
 	};
 
-// 🔤 форматирование имени переменной
-	function formatVarName(name: string): string {
-		return name
-			.trim()
-			.toLowerCase()
-			.replace(/\//g, "-")
-			.replace(/\s+/g, "-");
-	}
 
-// 🧹 удаляем квадратные скобки и кавычки
-	function cleanVarName(name: string): string {
-		return name.replace(/[\[\]"']/g, "").replace('-gen4', '');
-	}
+	const getCssVariables = async (figmaInstance: PluginAPI, collectionId?: string) => {
+		try {
+			const allVars = await figmaInstance.variables.getLocalVariablesAsync();
 
-// 🌓 нормализация mode
-	function normalizeModeName(name: string): string {
-		const n = name.trim().toLowerCase();
-		if (n === "dark") return "dt";
-		if (n === "light") return "lt";
-		return n.replace(/\s+/g, "-");
-	}
+			if (!allVars.length) {
+				figmaInstance.ui.postMessage({
+					type: "error",
+					message: "No variables found in this file.",
+				});
+				return;
+			}
 
-// 🎨 конвертация значений в CSS
-	function convertToCss(type: VariableResolvedDataType, value: any): string {
-		switch (type) {
-			case "COLOR": {
-				const color = value as RGBA;
-				if (
-					typeof color?.r !== "number" ||
-					typeof color?.g !== "number" ||
-					typeof color?.b !== "number"
-				) {
-					return "/* invalid color */";
+			const cssBlocks: string[] = [];
+			cssBlocks.push(`:root {`);
+
+			const grouped: Record<string, Variable[]> = {};
+			for (const v of allVars) {
+				if (collectionId && collectionId != v.variableCollectionId) {
+					continue
 				}
 
-				const R = Math.round(color.r * 255);
-				const G = Math.round(color.g * 255);
-				const B = Math.round(color.b * 255);
-				const A = color.a ?? 1;
-
-				return A < 1
-					? `rgba(${R}, ${G}, ${B}, ${A.toFixed(2)})`
-					: `#${((1 << 24) + (R << 16) + (G << 8) + B)
-						.toString(16)
-						.slice(1)}`;
+				const id = v.variableCollectionId;
+				if (!grouped[id]) grouped[id] = [];
+				grouped[id].push(v);
 			}
 
-			case "FLOAT": {
-				if (typeof value !== "number" || isNaN(value)) return "0rem";
-				const rem = +(value / 16).toFixed(4);
-				return `${rem}rem`;
+
+
+			for (const collectionId of Object.keys(grouped)) {
+				const vars = grouped[collectionId];
+				const collection = await getCollectionById(figmaInstance, collectionId);
+
+				const lines: string[] = [];
+				lines.push(`/* === ${collection?.name ?? "Unknown collection"} === */`);
+
+				for (const variable of vars) {
+					const modeIds = Object.keys(variable.valuesByMode);
+					const ensureModeIds =
+						modeIds.length > 0
+							? modeIds
+							: collection
+								? [collection.defaultModeId]
+								: [];
+
+					for (const modeId of ensureModeIds) {
+						const value = variable.valuesByMode[modeId];
+						const mode = collection?.modes.find((m) => m.modeId === modeId);
+
+						const modeSuffix =
+							mode && mode.name.toLowerCase() !== "default"
+								? "-" + normalizeModeName(mode.name)
+								: "";
+
+						const varName = cleanVarName(
+							`${formatVarName(variable.name)}${modeSuffix}`
+						);
+
+						let cssValue = "";
+
+						if (value?.type === "VARIABLE_ALIAS") {
+							const refVar = figmaInstance.variables.getVariableById(value.id);
+							if (refVar) {
+								const refName = cleanVarName(formatVarName(refVar.name));
+								cssValue = `var(--${refName})`;
+							} else {
+								cssValue = "/* invalid alias */";
+							}
+						} else {
+							const effectiveValue =
+								value ??
+								(collection
+									? variable.valuesByMode[collection.defaultModeId]
+									: undefined);
+
+							cssValue = convertToCss(
+								variable.resolvedType,
+								effectiveValue,
+								varName
+							);
+						}
+
+						lines.push(`  --${varName}: ${cssValue};`);
+					}
+				}
+
+				cssBlocks.push(lines.join("\n"));
 			}
+			cssBlocks.push('}')
 
-			case "STRING":
-				return `"${value}"`;
-
-			case "BOOLEAN":
-				return value ? "true" : "false";
-
-			default:
-				return "/* unsupported type */";
+			const css = cssBlocks.join("\n\n");
+			figmaInstance.ui.postMessage({ type: "css-result", css });
+		} catch (error: any) {
+			figmaInstance.ui.postMessage({
+				type: "error",
+				message: `Failed to export variables: ${error.message}`,
+			});
 		}
 	}
 }
-
