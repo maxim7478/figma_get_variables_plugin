@@ -8,6 +8,9 @@
 		"release": "plugma release"
 	},
 	"dependencies": {
+		"color-name-list": "^13.25.0",
+		"culori": "^4.0.2",
+		"nearest-color": "^0.4.4",
 		"pinia": "^3.0.3",
 		"vue": "^3.5.12"
 	},

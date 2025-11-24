@@ -1,5 +1,7 @@
 // src/main.ts
 import {cleanVarName, convertToCss, formatVarName, getCollectionById, normalizeModeName} from "./utils/exporting.ts";
+import {processPluginOutput} from "./css-variables-generator";
+import {TGeneratedVariablesType} from "./types";
 
 export default function () {
 	figma.showUI(__html__, { width: 400, height: 480 });
@@ -12,7 +14,17 @@ export default function () {
 				const collections = await figma.variables.getLocalVariableCollectionsAsync()
 				collection = collections.find(elem => elem.name === typeConnection)
 			}
-			return getCssVariables(figma, collection?.id)
+			const cssVariables = await getCssVariables(figma, collection?.id)
+			console.log(cssVariables)
+			figma.ui.postMessage({ type: "css-result", css: cssVariables });
+		}
+
+		if (msg.type === "generate-css-variables") {
+			const type: TGeneratedVariablesType = msg.props?.type
+			const cssVariables = await getCssVariables(figma)
+			const css = processPluginOutput(cssVariables as string, type)
+
+			figma.ui.postMessage({ type: "generated-css-variables", css });
 		}
 
 		if (msg.type === "get-collection") {
@@ -25,11 +37,6 @@ export default function () {
 				}
 			}))
 			figma.ui.postMessage({ type: "get-collection-result", collectionsMapped });
-		}
-
-		if (msg.type === 'copy') {
-			figma.notify('✅ CSS copied!');
-			figma.copyText(msg.text);
 		}
 	};
 
@@ -67,7 +74,7 @@ export default function () {
 				const collection = await getCollectionById(figmaInstance, collectionId);
 
 				const lines: string[] = [];
-				lines.push(`/* === ${collection?.name ?? "Unknown collection"} === */`);
+				lines.push(`/* ${collection?.name.toUpperCase() ?? "Unknown collection"} */`);
 
 				for (const variable of vars) {
 					const modeIds = Object.keys(variable.valuesByMode);
@@ -86,6 +93,7 @@ export default function () {
 							mode && mode.name.toLowerCase() !== "default"
 								? "-" + normalizeModeName(mode.name)
 								: "";
+
 
 						const varName = cleanVarName(
 							`${formatVarName(variable.name)}${modeSuffix}`
@@ -123,8 +131,7 @@ export default function () {
 			}
 			cssBlocks.push('}')
 
-			const css = cssBlocks.join("\n\n");
-			figmaInstance.ui.postMessage({ type: "css-result", css });
+			return cssBlocks.join("\n\n");
 		} catch (error: any) {
 			figmaInstance.ui.postMessage({
 				type: "error",

@@ -3,6 +3,7 @@ export const formatVarName = (name: string): string => {
     .trim()
     .toLowerCase()
     .replace(/\//g, "-")
+    .replace('--', "-")
     .replace(/\s+/g, "-");
 }
 

@@ -1,0 +1,1 @@
+export type TGeneratedVariablesType = 'ALL' | 'COMMON' | 'GEN4' | 'BLUE' | 'SCHEME'
